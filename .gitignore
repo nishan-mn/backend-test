@@ -1,4 +1,15 @@
 .venv/
+venv/
+env/
 __pycache__/
 .pytest_cache/
 *.py[cod]
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+__MACOSX/
+*.tif
+*.tiff
+*.TIF
+*.TIFF

@@ -2,9 +2,9 @@
 
 import re
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 Latitude = Annotated[float, Field(strict=True, ge=-90, le=90, allow_inf_nan=False)]
 Longitude = Annotated[float, Field(strict=True, ge=-180, le=180, allow_inf_nan=False)]
@@ -97,3 +97,125 @@ class AnalysisResponse(BaseModel):
     metrics: Metrics
     timeline: Annotated[list[TimelineEntry], Field(min_length=1, max_length=336)]
     model: ModelMetadata
+
+
+HistoricalLatitude = Annotated[float, Field(strict=True, ge=-90, le=90, allow_inf_nan=False)]
+HistoricalLongitude = Annotated[float, Field(strict=True, ge=0, lt=360, allow_inf_nan=False)]
+
+
+class HistoricalModel(BaseModel):
+    """Base contract for source-backed historical mission records."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SourceCitation(HistoricalModel):
+    key: Annotated[str, Field(min_length=1)]
+    title: Annotated[str, Field(min_length=1)]
+    url: HttpUrl
+    supports: Annotated[str, Field(min_length=1)]
+
+
+class MissionLocation(HistoricalModel):
+    name: Annotated[str, Field(min_length=1)]
+    latitude_deg: HistoricalLatitude
+    longitude_deg: HistoricalLongitude
+    location_type: Annotated[str, Field(min_length=1)]
+    coordinate_quality: Annotated[str, Field(min_length=1)]
+    precision_or_uncertainty: Annotated[str, Field(min_length=1)]
+    coordinate_reference: Annotated[str, Field(min_length=1)]
+    original_coordinate_text: Annotated[str, Field(min_length=1)]
+    source_keys: Annotated[list[str], Field(min_length=1)]
+
+
+class MissionMarkerLocation(HistoricalModel):
+    latitude_deg: HistoricalLatitude
+    longitude_deg: HistoricalLongitude
+    location_type: Annotated[str, Field(min_length=1)]
+    coordinate_quality: Annotated[str, Field(min_length=1)]
+
+
+class ReplayMetadata(HistoricalModel):
+    status: Literal["eligible", "eligible_with_location_note", "ineligible"]
+    location_field: Literal["actual_location", "intended_location"]
+    label: Annotated[str, Field(min_length=1)]
+
+
+class MissionSummary(HistoricalModel):
+    id: Annotated[str, Field(min_length=1)]
+    name: Annotated[str, Field(min_length=1)]
+    country: Annotated[str, Field(min_length=1)]
+    operator: Annotated[str, Field(min_length=1)]
+    event_time_utc: datetime
+    time_precision: Annotated[str, Field(min_length=1)]
+    landing_outcome: Annotated[str, Field(min_length=1)]
+    marker_location: MissionMarkerLocation
+    replay: ReplayMetadata
+
+    @field_validator("event_time_utc")
+    @classmethod
+    def event_time_must_be_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError("event_time_utc must be a UTC timestamp")
+        return value
+
+
+class MissionDetail(HistoricalModel):
+    id: Annotated[str, Field(min_length=1)]
+    name: Annotated[str, Field(min_length=1)]
+    spacecraft_or_lander: Annotated[str, Field(min_length=1)]
+    country: Annotated[str, Field(min_length=1)]
+    operator: Annotated[str, Field(min_length=1)]
+    event_time_utc: datetime
+    time_precision: Annotated[str, Field(min_length=1)]
+    event_description: Annotated[str, Field(min_length=1)]
+    mission_objective: Annotated[str, Field(min_length=1)]
+    landing_outcome: Annotated[str, Field(min_length=1)]
+    overall_mission_outcome: Annotated[str, Field(min_length=1)]
+    documented_failure_reason: str | None = None
+    what_happened: Annotated[str, Field(min_length=1)]
+    achievements: Annotated[str, Field(min_length=1)]
+    intended_location: MissionLocation
+    actual_location: MissionLocation
+    replay: ReplayMetadata
+    media: list[dict[str, Any]] = Field(default_factory=list)
+    sources: Annotated[list[SourceCitation], Field(min_length=1)]
+
+    @field_validator("event_time_utc")
+    @classmethod
+    def event_time_must_be_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError("event_time_utc must be a UTC timestamp")
+        return value
+
+
+class ReplayRequest(HistoricalModel):
+    duration_hours: Hours = 144
+
+
+class ReplayHistoricalContext(HistoricalModel):
+    mission_id: Annotated[str, Field(min_length=1)]
+    location_label: Annotated[str, Field(min_length=1)]
+    location_type: Annotated[str, Field(min_length=1)]
+    coordinate_quality: Annotated[str, Field(min_length=1)]
+
+
+class HistoricalReplayInput(HistoricalModel):
+    latitude_deg: HistoricalLatitude
+    longitude_deg: HistoricalLongitude
+    start_utc: datetime
+    duration_hours: Hours
+    historical_context: ReplayHistoricalContext
+
+    @field_validator("start_utc")
+    @classmethod
+    def start_time_must_be_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError("start_utc must be a UTC timestamp")
+        return value
+
+
+class ErrorResponse(HistoricalModel):
+    """Error payload matching the existing API's ``detail`` convention."""
+
+    detail: Annotated[str, Field(min_length=1)]

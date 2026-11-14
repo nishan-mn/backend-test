@@ -4,14 +4,21 @@ import os
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.models import AnalysisRequest, AnalysisResponse
+from app.models import (
+    AnalysisRequest,
+    AnalysisResponse,
+    ErrorResponse,
+    MissionDetail,
+    MissionSummary,
+)
 from app.services.horizons import HorizonsError, TIMEOUT
+from app.services.historical_missions import get_mission_detail, list_mission_summaries
 from app.services.visibility import analyze_visibility
 
 
@@ -62,6 +69,43 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get(
+        "/api/missions",
+        response_model=list[MissionSummary],
+        responses={422: {"model": ErrorResponse}},
+        tags=["missions"],
+    )
+    async def read_missions(
+        country: str | None = Query(default=None, min_length=1),
+        landing_outcome: str | None = Query(default=None, min_length=1),
+    ) -> list[MissionSummary]:
+        """Return source-backed history only; modeled replay output is separate."""
+
+        try:
+            return list_mission_summaries(
+                country=country,
+                landing_outcome=landing_outcome,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get(
+        "/api/missions/{mission_id}",
+        response_model=MissionDetail,
+        responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+        tags=["missions"],
+    )
+    async def read_mission(mission_id: str) -> MissionDetail:
+        """Return a complete verified mission record with its source provenance."""
+
+        try:
+            mission = get_mission_detail(mission_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if mission is None:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return mission
 
     @app.post("/api/analyze", response_model=AnalysisResponse)
     async def analyze(

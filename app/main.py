@@ -20,6 +20,7 @@ from app.models import (
 from app.services.horizons import HorizonsError, TIMEOUT
 from app.services.historical_missions import get_mission_detail, list_mission_summaries
 from app.services.visibility import analyze_visibility
+from app.terrain_router import router as terrain_router
 
 
 @asynccontextmanager
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
+    app.include_router(terrain_router)
 
     @app.exception_handler(HorizonsError)
     async def horizons_error(request: Request, exc: HorizonsError) -> JSONResponse:
